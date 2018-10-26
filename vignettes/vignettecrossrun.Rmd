@@ -1,0 +1,365 @@
+---
+title: "crossrun: An R Package for the Joint Distribution of Number of Crossings and  
+  Longest Run in Independent Bernoulli Observations"
+shorttitle: "crossrun"
+author: 
+- name: Tore Wentzel-Larsen  
+  affiliation: 
+    - Norwegian Centre of Violence and Traumatic Stress Studies 
+    - Centre for Child and Adolescent Mental Health, Eastern and Southern Norway;
+     Norwegian Centre of Violence and Traumatic Stress Studies 
+  email: tore.wentzellarsen@gmail.com
+- name: Jacob Anhøj
+  affiliation: 
+  - Rigshospitalet, University of Copenhagen, Denmark
+  email: jacob@anhoej.net
+package name: crossrun
+date: "`r Sys.Date()`"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+    fig_caption: yes
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse  = TRUE, 
+  comment   = "#>",
+  fig.width = 7.15,
+  fig.height = 3.5,
+  echo = FALSE,
+  message = FALSE)
+
+library(crossrun)
+```
+
+## Introduction
+
+The setting is defined by a number, n, of independent observations from a Bernoulli distribution with equal success probability. In statistical process control, our main intended application, this may be the useful observations in a run chart recording values above and below a pre-specified centre line (usually the median obtained from historical data) disregarding any observations equal to the centre line ([Anhøj (2015)](http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0121349)). If the centre line is the median in the same data set the main procedures do not apply, but `crossrun` includes a procedure for this case that, however, is of higher algorithmic complexity and at present cannot be used for all sequence lengths of practical importance.
+
+The focus of `crossrun` is the number of crossings, C, and the length of the longest run in the sequence, L. A run is a sequence of successes or failures, delimited by a different observation or the start or end of the entire sequence. A crossing is two adjacent different observations. 
+
+Figure 1 illustrates runs and crossings in a run chart with 24 observations. Observations above and below the median represent successes and failures respectively:
+
+```{r fig1, fig.cap="Figure 1"}
+set.seed(32)
+n <- 24
+y <- rnorm(n)
+x <- seq(n)
+
+op <- par(mar = c(bottom = 0, left   = 0, top    = 0, right  = 0))
+
+plot(x, y,
+     axes = FALSE,
+     type = "b",
+     pch  = '',
+     lwd  = 1.5,
+     ylab = '',
+     xlab = '')
+
+lines(x, rep(median(y), n),
+      col = 'grey40')
+
+text(x, y)
+
+par(op)
+```
+
+The longest run consists of observations 12-16 below the median. Thus, the length of the longest run is L = 5 in this case. The number of crossings of the median is C = 11. 
+
+C and L are inversely related. All things being equal, when one goes up, the other goes down. `crossrun` computes the joint distribution of C and L.
+
+C and L are integers.  C may be any integer between 0, if all observations are equal, and n - 1 if all subsequent observations are different. L may be any integer between 1, if all subsequent observations are different, and n, if all observations are equal. Not all combinations of C and L are possible as shown in the following example for n = 14 and success probability = 0.5.
+
+```{r symm14, echo=FALSE, message=FALSE}
+library(crossrun)
+rownames(joint14symm)[1] <- "C = 0"
+colnames(joint14symm)[1] <- "L = 1"
+knitr::kable(joint14symm, caption = 'Table 1')
+```
+
+As will be described and justified in more detail later, the table above does not give the probabilities themselves, but the probabilities multiplied by $2^{n-1}$, that is 8192 for n = 14. For instance $P (C=6, L=5)$ = 392 / 8192 = 0.048. The highest joint probabilities are $P (C=7, L=3)$ and $P (C=8, L=3)$, both equal to 756 / 8192 = 0.092. Thus, in a run chart with 14 observations not on the median, the most likely combinations of number of crossings and longest run are C=7 or 8 and L=3. 
+
+As seen in the table, the non-zero probabilities are confined to a sloped region that is rather narrow but sufficiently wide that the two variables together are more informative than each of them in isolation. These are general phenomena.
+
+The procedure for computing the joint distribution of C and L is iterative, which means that the joint distribution for a sequence of length n cannot be computed before the joint distributions for all shorter sequences have been computed. At the moment, the computations have been validated for n up to 100, and success probabilities 0.5 to 0.9 in steps of 0.1.
+
+## The main function: `crossrunbin`
+
+The function `crossrunbin` has two main arguments, `nmax` that is the maximum sequence length and `prob` that is the success probability. Other arguments include a multiplier described later and a precision parameter, these should normally be left at their default values. An argument `printn`, if set to TRUE, gives progress information for each step in the usually lengthy computation procedure. See `?crossrunbin` for details.
+
+The joint probabilities are stored in a list of 6 lists of which `pt` is sufficient for normal use. The others are mainly included for code checking. `pt` gives an n by n matrix for each sequence length n. For instance
+
+`crb40.6 <- crossrunbin(nmax = 40, prob = 0.6)$pt`
+
+computes the joint probabilities for all sequence lengths $n \leq 40$ when the success probability is 0.6. For simplicity, the command above only returns the joint probabilities `pt`. When the computation is finished, the joint distribution for say n = 14 is 
+
+`crb40.6[[14]]`
+
+Actually the resulting joint distribution is not quite a matrix, it is a two-dimensional mpfr array ([Fousse et, al, 2007](http://doi.acm.org/10.1145/1236463.1236468), [Mächler 2018](https://CRAN.R-project.org/package=Rmpfr)). Two-dimensional mpfr arrays are almost the same as matrices, but with appreciably higher precision. Since the computation procedure is iterative, high precision during calculation is vital, but the resulting joint distributions may subsequently be transformed into ordinary matrices by the [Rmpfr](https://CRAN.R-project.org/package=Rmpfr) function `asNumeric` for easier presentation. To limit the package size, only the joint distributions for n = 14, 60, 100 and success probabilities 0.5 (the symmetric case) and 0.6 have been included in this package, as ordinary matrices.
+
+## The "times" representation of the joint distributions
+
+As mentioned, the joint distributions are actually not computed as probabilities, but as probabilities times a multiplier whose default value is $2^{n-1}$. Optionally another multiplier $m^{n-1}$ could be used where $m$ is an argument (`mult`) to the function `crossrunbin`, but the default value should normally be used. This representation is shown in Table 1 for n = 14 and p = 0.5.
+
+One may note that in Table 1 all probabilities are represented by integers in the "times" representation. This is a general phenomenon in the symmetric case, but not for success probabilities different from 0.5. In the symmetric case ([Anhøj and Vingaard Olesen (2014)](http://www.plosone.org/article/info%3Adoi%2F10.1371%2Fjournal.pone.0113825)) the number, C, of crossings has a binomial distribution with number of observations n - 1 and probability 0.5, and their marginal probabilities are just the binomial coefficients divided by $2^{n-1}$. Indeed, the row sums in the times representation are the binomial coefficients in the symmetric case. This will be explicated later in the case of n = 14.
+
+When the success probability is not 0.5, the joint distribution is no longer represented by integers even in the times representation. This is illustrated below for n = 14 and success probability 0.6. 
+
+```{r p14.6, echo=FALSE, message=FALSE, fig.width=15}
+rownames(joint14.6)[1] <- "C = 0"
+colnames(joint14.6)[1] <- "L = 1"
+knitr::kable(round(joint14.6,1), caption = 'Table 2')
+```
+
+In Table 2 the results are shown with one decimal. The cells different from 0 are the same as in the symmetric case, but the distribution centre has been shifted in the direction of longer runs and fewer crossings. 
+
+The times representation may be advantageous for presentation because very small numbers are avoided. However, the main reason for using this representation is to enhance precision in the iterative computation procedure.
+
+## The symmetric case: `crossrunsymm`
+
+In the symmetric case the joint probabilities are, as illustrated in Table 1, stored as integers in the times representation. A separate function `crossrunsymm` is available in this case. The arguments, except the success probability, are the same as in the more general function `crossrunbin`, but the inner workings are somewhat simpler.
+
+## Generalisation
+
+In the case of variable success probability, a similar procedure is available and implemented in the function `crossrunchange`. In this procedure all arguments are as in `crossrunbin`, except that the success probability is replaced by a vector of length n with success probabilities for each of the n time points.
+
+## When the median is determined by the data itself
+
+In this case the procedure in `crossrunbin` does not apply. A separate function `crossrunem` (em: empirical median) has been constructed for this case. The procedure only applies to the symmetric case, based on n independent and identically observations of a continuous variable. The useful observations, defined as the observations different from the empirical median ([Anhøj and Vingaard Olesen (2014)](http://www.plosone.org/article/info%3Adoi%2F10.1371%2Fjournal.pone.0113825)), are always an even number, therefore the joint distributions of C and L are only needed for even n, say n=2m. Then, half the observations are by definition above the median and the others are below, and all `choose(2m,m)` placements of the observations above the median are, by symmetry, equally probable. To compute the joint probabilities of C and L in this case then amounts to determine the number of subsets of size m=n/2 for each combination of C and L. In analogy with the times representation these numbers may be stored, and the joint probabilities are then computed by dividing by `choose(2m,m)`. Actually, for technical reasons, only the number of subsets containing the first observation is computed, and the probabilities are therefore computed by dividing by `choose(2m,m)/2`.
+
+A complete enumeration of all subsets of size m=n/2 is, however, not practicable except for rather small sequences, the algorithic complexity is prohibitive well below n=30. Therefore, an iterative procedure resembling the corresponing procedure in `crossrunbin` has been developed and used for n up to about 60. For this procedure to work it has been necessary to include the number of subsets of any size m, $0 \leq m \leq n$, and also perform the computations for odd n. Thus, only a tiny part of the result of the computations is actually used. Still, the procedure has appreciably lower algorithmic complexity in terms of storage and computer time than explicit enumeration. 
+
+The function `crossrunem` has arguments `nmax` for maximum sequence length, `prec` for precision in the [Rmpfr](https://CRAN.R-project.org/package=Rmpfr) computations, normally set to its default value, and `printn` for including progress information during the computations. The procedure has so far been used up to nmax=60. A function `crossrunemcont` has been made for extension of an existing `crossrunem` computation, so that one does not need to start from scratch when attempting to extend the results of the computations to a somewhat higher value of n.
+
+A function `simclem` (simulation of C and L with the empirical median) has been made so that the joint distributions from `crossrunem` may be compared with simulations. In `simclem` the continuous distribution used is a standard normal, but the number of observations above and below the empirical median does not depend on what continuous distribution is used. Agreement between results from `crossrunem` and simulations has been investigated and is good, some details are included in the Appendix. Also, the marginal distributions of C and L from `crossrunem` have been compared with the corresponding distributions from `crossrunsymm`. There are indications that the agreement is better for higher n. Some details have been included in the Appendix. The results from `crossrunem` for n=14 and 60 have been included in the package as ordinary matrices `joint14em` and `joint60em`, using a times representations in which the corresponding probabilities are obtained by dividing by choose(14,7)/2=1716 and choose(60,30)/2,respectively. 
+
+For n=14 the joint distribution is shown below:
+
+```{r p14em, echo=FALSE, message=FALSE, fig.width=15}
+knitr::kable(joint14em, caption = 'Table 3')
+```
+
+Comparing with Table 1 above, C=0 is not included since there has to be at least one crossing of the empirical median. Also, with exactly 7 observations above and 7 below the median, the longest run cannot be higher than 7. Generally, C=0 does not occur, and the highest possible value of the longest run is is m=n/2.
+
+## Limitations
+
+The computations in the case when the empirical median is used have too high algorithmic complexity for n much higher than 60. Also, the procedure `crossrunem` only applies for a continuous distribution, while the observations may be e. g. counts in practice. Also, the procedures in the package `crossrun` cannot be generalized to autocorrelated time sequences.
+
+## Conclusions
+
+The `crossrun` package is, to our knowledge the first software package that allows for the computation of joint probabilities of number of crossings and longest run in time series data. This is an important step forward, as previous work on the subject has only dealt with these parameters as independent entities. This work may form the basis of better tests for non-random variation in time series data than are currently available.
+
+## References
+
+1. Jacob Anhøj (2015). [Diagnostic value of run chart analysis: 
+ Using likelihood ratios to compare run chart rules on simulated 
+ data series](http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0121349)
+PLOS ONE 10 (3): e0121349.
+
+1. Jacob Anhøj, Anne Vingaard Olesen (2014). [Run Charts Revisited: A Simulation Study of Run Chart Rules for Detection of Non-Random Variation in Health Care Processes](http://www.plosone.org/article/info%3Adoi%2F10.1371%2Fjournal.pone.0113825). PLoS ONE 9(11): e113825.
+ 
+1. Laurent Fousse, Guillaume Hanrot, Vincent Lefèvre, 
+ Patrick Pélissier, Paul Zimmermann. (2007). [Mpfr: A multiple-precision 
+ binary floating-point library with correct 
+ rounding](http://doi.acm.org/10.1145/1236463.1236468)
+ACM Trans. Math. Softw. 33 (2): 13. ISSN 0098-3500.
+
+1. Martin Mächler (2018). [Rmpfr: R MPFR - Multiple Precision 
+  Floating-Point Reliable](https://CRAN.R-project.org/package=Rmpfr)
+R package version 0.7-0.
+
+## Appendix: Checking procedures
+
+Procedures for checking the joint distributions are available in `crossrun`. First, the function `exactbin` computes the joint distribution for $n \leq 6$ independently of the iterative procedure, by formulas based on "brute force" enumeration that is practically feasible for these short sequences. An example of use of `exactbin` for checking of results of the exact procedure is as follows, for n=5 and success probability 0.6 (multiplied by $2^4=16$ to conform with the times representation):
+
+```{r exact1, message=FALSE, echo=T}
+library(crossrun)
+library(Rmpfr)
+
+exact1   <- asNumeric((2^4) * exactbin(n = 5, p = 0.6))
+iter1    <- asNumeric(crossrunbin(nmax = 5, prob = 0.6)$pt[[5]])
+compare1 <- cbind(exact1,iter1)
+
+compare1
+```
+
+Here the 5 leftmost columns come from exact calculations while the 5 rightmost columns come from the iterative procedure. The maximum absolute difference is computed as `r max(abs(exact1-iter1))` in this case. Generally some tiny differences may occur.
+
+The iterative computations may also be checked for appreciably higher n. As commented above the row sums in the symmetric case are just the binomial coefficients. The following code checks this fact for n=14.
+
+```{r bincoeff14, message=FALSE, echo=T}
+library(crossrun)
+library(Rmpfr)
+bincoeff14           <- Rmpfr::chooseMpfr.all(14) # binomial coefficients, n - 1 = 14
+bincoeff14iter       <- cumsumm(joint14symm)[-1, 14]     # row sums, n - 1 = 14
+compare14            <- rbind(asNumeric(bincoeff14), bincoeff14iter)
+row.names(compare14) <- c("exact","iter")
+compare14
+max(abs(bincoeff14 - bincoeff14iter))
+```
+
+This check has been repeated for  $n \leq 100$ with full mpfr precision without finding any discrepancies.
+
+The results of the iterative procedure may also be checked by results of simulations. The `crossrun` function `simclbin` performs simulations for the number of crossings and the longest run for chosen values of the success probability. Again, computations for substantially longer sequences (n appreciably higher than 14) should use full mpfr precision for the joint distribution. The following code shows the procedure for n = 14 and 10000 simulations and compares the mean of $C \cdot L$ in the simulations with the corresponding mean from the joint distribution with success probability 0.6:
+
+```{r sim14, message=FALSE, echo=T}
+library(crossrun)
+set.seed(83938487)
+sim14 <- simclbin(nser = 14, nsim = 10000)
+(matrix(0:13, nrow = 1) %*% joint14.6 %*% matrix(1:14, ncol = 1)) / 2^13
+mean(sim14$nc0.6 * sim14$lr0.6)
+```
+
+Here, $C \cdot L$ is just used as an example of a fairly demanding function of the number C of crossing and the longest run L. Again, computations for substantially longer sequences (n appreciably higher than 14) should use full mpfr precision for the joint distribution. Simpler statistics include means and standard deviations of C and L separately. The following shows a graphical comparison of the cumulative distribution functions of C and L based on the joint distribution and the simulations.
+
+```{r sim14plot, message=FALSE}
+library(crossrun)
+plot(x      = as.numeric(names(table(sim14$nc0.6))),
+     y      = (cumsum(cumsumm(joint14.6)[,14]) /
+                 (2^13))[as.numeric(names(table(sim14$nc0.6))) + 1],
+     type   = "l",
+     xlab   = "Number of crossings",
+     ylab   = "CDF",
+     las    = 1)
+points(x    = as.numeric(names(table(sim14$nc0.6))),
+       y    = cumsum(table(sim14$nc0.6))/sum(table(sim14$nc0.6)),
+       type = "l",
+       col  = "red",
+       lty  = "dotted")
+lines(x     = c(0, 1),
+      y     = c(0.9, 0.9),
+      col   = "red")
+text(x      = 1,
+     y      = 0.9,
+     pos    = 4,
+     labels = "red: simulations",
+     col    = "red")
+
+plot(x      = as.numeric(names(table(sim14$lr0.6))),
+     y      = as.numeric(cumsum(cumsummcol(joint14.6)[14,]) /
+                           sum(cumsummcol(joint14.6)[14,]))[
+                             as.numeric(names(table(sim14$lr0.6)))],
+     type   = "l",
+     xlab   = "Longest run",
+     ylab   = "CDF",
+     las    = 1)
+points(x    = as.numeric(names(table(sim14$lr0.6))),
+       y    = cumsum(table(sim14$lr0.6))/sum(table(sim14$lr0.6)),
+       type = "l",
+       col  = "red",
+       lty  = "dotted")
+lines(x   = c(2, 3),
+      y   = c(0.9, 0.9),
+      col = "red")
+text(x      = 3,
+     y      = 0.9,
+     pos    = 4,
+     labels = "red: simulations",
+     col    = "red")
+```
+
+In the case of the empirical median the results may also be checked by simulations. For n=14 we get the following comparison between the joint distribution and simulation results, for the mean number of crossings, mean longest run and the mean of $C \cdot L$, respectively:
+
+```{r sim14em, message=FALSE, echo=T}
+library(crossrun)
+set.seed(83938487)
+sim14em <- simclem(m1=7, nsim = 10000)
+sum(c(1:13) *cumsumm(joint14em)[,7])/(choose(14,7)/2) 
+mean(sim14em$cs)
+sum(c(1:7) *cumsummcol(joint14em)[13,])/(choose(14,7)/2) 
+mean(sim14em$ls)
+(matrix(1:13, nrow = 1) %*% joint14em %*% matrix(1:7, ncol = 1)) / (choose(14,7)/2) 
+mean(sim14em$cs * sim14em$ls)
+```
+
+Comparison with simulation results in the cumulative distribution functions of C and L are as follows:
+
+```{r sim14compare, message=FALSE}
+library(crossrun)
+plot(x      = as.numeric(names(table(sim14em$cs))),
+     y      = (cumsum(cumsumm(joint14em)[,7]) /
+                 (choose(14,7)/2))[as.numeric(names(table(sim14em$cs)))],
+     type   = "l",
+     xlab   = "Number of crossings",
+     ylab   = "CDF",
+     las    = 1)
+points(x    = as.numeric(names(table(sim14em$cs))),
+       y    = cumsum(table(sim14em$cs))/sum(table(sim14em$cs)),
+       type = "l",
+       col  = "red",
+       lty  = "dotted")
+lines(x     = c(1, 2),
+      y     = c(0.9, 0.9),
+      col   = "red")
+text(x      = 2,
+     y      = 0.9,
+     pos    = 4,
+     labels = "red: simulations",
+     col    = "red")
+
+plot(x      = as.numeric(names(table(sim14em$ls))),
+     y      = as.numeric(cumsum(cumsummcol(joint14em)[13,]) /
+                           sum(cumsummcol(joint14em)[13,]))[
+                             as.numeric(names(table(sim14em$ls)))],
+     type   = "l",
+     xlab   = "Longest run",
+     ylab   = "CDF",
+     las    = 1)
+points(x    = as.numeric(names(table(sim14em$ls))),
+       y    = cumsum(table(sim14em$ls))/sum(table(sim14em$ls)),
+       type = "l",
+       col  = "red",
+       lty  = "dotted")
+lines(x   = c(1, 2),
+      y   = c(0.9, 0.9),
+      col = "red")
+text(x      = 2,
+     y      = 0.9,
+     pos    = 4,
+     labels = "red: simulations",
+     col    = "red")
+```
+
+The joint distributions may be compared between the cases with pre-defined and empirical median. For n=14 the cumulative distribution functions for C and L are as follows:
+
+```{r cremplot14, message=FALSE}
+library(crossrun)
+  plot(x=0:13, y=cumsum(cumsumm(joint14symm)[,14])/sum(joint14symm),
+       type="l", ylab="CDF", las=1,
+       main="Number of crossings, n=14", xlab="red: empirical median")
+  points(x=1:13,
+         y=cumsum(cumsumm(joint14em)[,7])/(sum(joint14em)),
+         type="l", col="red",lty="dotted")
+  plot(x=1:14, y=cumsum(cumsummcol(joint14symm)[14,])/sum(joint14symm),
+       type="l", ylab="CDF", las=1,
+       main="Longest run, n=14", xlab="red: empirical median")
+  points(x=1:7, y=cumsum(cumsummcol(joint14em)[13,])/sum(joint14em),
+         type="l", col="red",lty="dotted")
+```
+
+We see that there is a certain discrepancy, with more crossings and the longest run shorter when the median is determined by the data itself. The corresponding comparison for n=60 is as follows:
+
+```{r cremplot60, message=FALSE}
+library(crossrun)
+  plot(x=0:59, y=cumsum(cumsumm(joint60symm)[,60])/sum(joint60symm),
+       type="l", ylab="CDF", las=1,
+       main="Number of crossings, n=60", xlab="red: empirical median")
+  points(x=1:59,
+         y=cumsum(cumsumm(joint60em)[,30])/(sum(joint60em)),
+         type="l", col="red",lty="dotted")
+  plot(x=1:60, y=cumsum(cumsummcol(joint60symm)[60,])/sum(joint60symm),
+       type="l", ylab="CDF", las=1,
+       main="Longest run, n=60", xlab="red: empirical median")
+  points(x=1:30, y=cumsum(cumsummcol(joint60em)[59,])/sum(joint60em),
+         type="l", col="red",lty="dotted")
+```
+
+The discrepancy is in the same direction as for n=14, but considerably smaller. This may imply that the joint distribution for a pre-determined midline could be an acceptable approximation in the case with empirical median, for long sequences for which it is difficult to compute the joint distribution with empirical median. This is, however, a question that needs further investigation.

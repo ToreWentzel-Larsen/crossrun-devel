@@ -1,0 +1,25 @@
+Package: crossrun
+Version: 0.1.1
+Title: Joint Distribution of Number of Crossings and Longest Run
+Authors@R: c(person("Tore","Wentzel-Larsen",email="tore.wentzellarsen@gmail.com",role=c("aut","cre")),
+  person("Jacob", "Anhøj", email="jacob@anhoej.net", role="aut"))
+Description: Joint distribution of number of crossings and the 
+  longest run in a sequence of independent Bernoulli trials. The
+  computations uses an iterative procedure where computations 
+  are based on results from shorter series. The procedure 
+  conditions on the start value and partitions by further 
+  conditioning on the position of the first crossing (or none).
+  Also included are these joint distributions in a sequence of
+  independent continuous observations classified as above or below
+  the empirical median.
+Depends: R (>= 3.5)
+License: GPL-3
+URL: https://github.com/ToreWentzel-Larsen/crossrun
+Encoding: UTF-8
+LazyData: true
+Imports: Rmpfr (>= 0.7-1)
+RoxygenNote: 6.1.0
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
